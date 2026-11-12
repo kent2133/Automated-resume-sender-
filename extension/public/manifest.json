@@ -8,7 +8,7 @@
   "host_permissions": [
     "http://localhost/*",
     "http://127.0.0.1/*",
-    "https://app.applyflow.example/*"
+    "https://automated-resume-sender.vercel.app/*"
   ],
   "action": {
     "default_title": "Open ApplyFlow Assistant"

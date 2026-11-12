@@ -21,6 +21,8 @@ import {
 
 type Notice = { tone: "success" | "error" | "info"; message: string } | null;
 
+const PRODUCTION_DASHBOARD_URL = "https://automated-resume-sender.vercel.app/";
+
 async function sendRequest<T>(request: PanelRequest): Promise<T> {
   const response: unknown = await chrome.runtime.sendMessage(request);
   if (!isRuntimeResponse(response)) throw new Error("The extension returned an invalid response");
@@ -368,8 +370,23 @@ export function App() {
           <p className="eyebrow">APPLICATION COPILOT</p>
           <h1>ApplyFlow</h1>
         </div>
-        <span className="demo-badge">{manualCompanionMode ? "Manual mode" : "Local only"}</span>
+        <a
+          aria-label="Open the ApplyFlow production dashboard in a new tab"
+          className="dashboard-link"
+          href={PRODUCTION_DASHBOARD_URL}
+          rel="noreferrer noopener"
+          target="_blank"
+        >
+          <span className="connection-dot" aria-hidden="true" />
+          Dashboard
+          <span aria-hidden="true">&#8599;</span>
+        </a>
       </header>
+
+      <div className="connection-note" role="note">
+        <span>{manualCompanionMode ? "Manual companion" : "Local review mode"}</span>
+        <small>Production dashboard available - profile transfer remains manual through private JSON.</small>
+      </div>
 
       <section className="hero-card">
         <div className="hero-grid" aria-hidden="true" />

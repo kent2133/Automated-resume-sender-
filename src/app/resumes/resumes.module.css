@@ -1,0 +1,298 @@
+.page {
+  min-height: 100vh;
+  padding: 28px;
+  background:
+    radial-gradient(circle at 85% 0%, rgba(67, 216, 186, 0.12), transparent 30%),
+    var(--background);
+}
+
+.shell {
+  width: min(1040px, 100%);
+  margin: 0 auto;
+}
+
+.topbar,
+.managerHeader,
+.actions,
+.success {
+  display: flex;
+  align-items: center;
+}
+
+.topbar,
+.managerHeader {
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.brand,
+.back,
+.uploadButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.brand {
+  color: var(--foreground);
+  font-size: 0.92rem;
+  font-weight: 760;
+}
+
+.brand > span,
+.heroIcon,
+.fileIcon {
+  display: grid;
+  place-items: center;
+}
+
+.brand > span {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: #07101e;
+  background: linear-gradient(135deg, var(--teal), #8ab4ff);
+}
+
+.back {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.hero {
+  max-width: 760px;
+  padding: 78px 0 52px;
+}
+
+.heroIcon {
+  width: 42px;
+  height: 42px;
+  margin-bottom: 22px;
+  border: 1px solid rgba(67, 216, 186, 0.24);
+  border-radius: 13px;
+  color: var(--teal);
+  background: var(--teal-soft);
+}
+
+.hero > p,
+.managerHeader span {
+  color: var(--teal);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  margin: 12px 0 0;
+  font-size: clamp(2.8rem, 7vw, 5.5rem);
+  font-weight: 520;
+  letter-spacing: -0.07em;
+  line-height: 0.96;
+}
+
+.hero > span {
+  display: block;
+  max-width: 650px;
+  margin-top: 24px;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.manager {
+  padding: 26px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(16, 20, 25, 0.88);
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.2);
+}
+
+.managerHeader h2 {
+  margin: 7px 0 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.04em;
+}
+
+.uploadButton {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 11px;
+  color: #07101e;
+  background: var(--teal);
+  font-size: 0.76rem;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.uploadButton input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.securityNote,
+.error,
+.success {
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border-radius: 11px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.securityNote {
+  color: #9ed9cd;
+  border: 1px solid rgba(67, 216, 186, 0.18);
+  background: var(--teal-soft);
+}
+
+.securityNote svg {
+  margin-right: 8px;
+  vertical-align: -3px;
+}
+
+.error {
+  color: #ffd2c2;
+  border: 1px solid rgba(255, 122, 88, 0.24);
+  background: rgba(255, 122, 88, 0.08);
+}
+
+.success {
+  gap: 8px;
+  color: #b9eee4;
+  border: 1px solid rgba(67, 216, 186, 0.22);
+  background: var(--teal-soft);
+}
+
+.list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.resumeCard {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.fileIcon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  color: #8ab4ff;
+  background: var(--blue-soft);
+}
+
+.fileInfo > div {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+
+.fileInfo strong {
+  font-size: 0.85rem;
+}
+
+.fileInfo > div span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #07101e;
+  background: var(--teal);
+  font-size: 0.6rem;
+  font-weight: 800;
+}
+
+.fileInfo p,
+.fileInfo small {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.fileInfo small {
+  display: block;
+  color: var(--subtle);
+}
+
+.actions {
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.actions button {
+  min-height: 36px;
+  padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  color: var(--foreground);
+  background: transparent;
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.actions button:disabled {
+  opacity: 0.45;
+  cursor: wait;
+}
+
+.actions .deleteButton {
+  color: #ffb4a1;
+  border-color: rgba(255, 122, 88, 0.25);
+}
+
+.empty {
+  min-height: 210px;
+  margin-top: 18px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 14px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty strong {
+  color: var(--foreground);
+}
+
+.empty span {
+  max-width: 440px;
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.spin {
+  animation: spin 850ms linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 760px) {
+  .page { padding: 20px; }
+  .hero { padding: 54px 0 38px; }
+  .managerHeader { align-items: flex-start; flex-direction: column; }
+  .resumeCard { grid-template-columns: 42px 1fr; }
+  .actions { grid-column: 1 / -1; justify-content: flex-start; }
+}

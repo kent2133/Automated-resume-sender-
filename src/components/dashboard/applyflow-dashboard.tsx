@@ -34,17 +34,24 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { User } from "@supabase/supabase-js";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   applicationActivity,
   initialJobs,
-  pipelineStages,
-  profileCoverage,
+  profileCoverage as demoProfileCoverage,
   sourcePerformance,
   weeklyTrend,
   type JobMatch,
   type QueueStatus,
 } from "@/lib/demo-data";
+import {
+  loadCloudWorkspace,
+  persistAnsweredField,
+  persistJobStatus,
+  resetCloudWorkspace,
+} from "@/lib/supabase/dashboard-workspace";
+import { getBrowserSupabaseClient } from "@/lib/supabase/browser";
 import styles from "@/app/page.module.css";
 
 type QueueTab = "review" | "ready" | "history";
@@ -56,11 +63,9 @@ type ActivityItem = {
   time: string;
   tone: ActivityTone;
 };
+type CloudStatus = "checking" | "demo" | "syncing" | "synced" | "error";
 
 const queueTabOrder: QueueTab[] = ["review", "ready", "history"];
-const initialSentCount = initialJobs.filter((job) => job.status === "sent").length;
-const initialTrackedCount = pipelineStages[pipelineStages.length - 1]?.value ?? 0;
-
 const navItems = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "review-queue", label: "Review queue", icon: Inbox },
@@ -92,6 +97,7 @@ function ScoreBadge({ score }: { score: number }) {
 }
 
 export function ApplyFlowDashboard() {
+  const supabaseResult = useMemo(() => getBrowserSupabaseClient(), []);
   const [jobs, setJobs] = useState<JobMatch[]>(initialJobs);
   const [activity, setActivity] = useState<ActivityItem[]>(() => [
     ...applicationActivity,
@@ -105,14 +111,114 @@ export function ApplyFlowDashboard() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeNav, setActiveNav] = useState("overview");
   const [toast, setToast] = useState<string | null>(null);
-  const [answeredFields, setAnsweredFields] = useState<Record<string, boolean>>({});
+  const [answeredFields, setAnsweredFields] = useState<Record<string, string>>({});
+  const [answerDrafts, setAnswerDrafts] = useState<Record<string, string>>({});
   const [notificationsRead, setNotificationsRead] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState<CloudStatus>(
+    supabaseResult.configured ? "checking" : "demo",
+  );
+  const [cloudUser, setCloudUser] = useState<User | null>(null);
+  const [profileName, setProfileName] = useState<string | null>(null);
+  const [profileCoverage, setProfileCoverage] = useState(demoProfileCoverage);
+  const [cloudError, setCloudError] = useState<string | null>(null);
   const sidebarRef = useRef<HTMLElement | null>(null);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const drawerRef = useRef<HTMLElement | null>(null);
   const drawerTriggerRef = useRef<HTMLElement | null>(null);
   const toastTimeoutRef = useRef<number | null>(null);
   const activitySequenceRef = useRef(0);
+  const workspaceLoadRef = useRef<Promise<void> | null>(null);
+  const workspaceLoadUserRef = useRef<string | null>(null);
+
+  const loadWorkspaceForUser = useCallback(
+    (user: User) => {
+      if (!supabaseResult.configured) {
+        setCloudStatus("demo");
+        return Promise.resolve();
+      }
+
+      if (workspaceLoadRef.current && workspaceLoadUserRef.current === user.id) {
+        return workspaceLoadRef.current;
+      }
+
+      const load = (async () => {
+        setCloudStatus("checking");
+        setCloudError(null);
+        try {
+          const workspace = await loadCloudWorkspace(supabaseResult.client, user);
+          setJobs(workspace.jobs);
+          setActivity(workspace.activity as ActivityItem[]);
+          setAnsweredFields(workspace.answeredFields);
+          setAnswerDrafts(workspace.answeredFields);
+          setProfileName(workspace.profileName);
+          setProfileCoverage(workspace.profileCoverage);
+          setCloudUser(user);
+          setCloudStatus("synced");
+        } catch (error) {
+          setCloudUser(user);
+          setCloudStatus("error");
+          setCloudError(
+            error instanceof Error ? error.message : "The cloud workspace could not be loaded.",
+          );
+        }
+      })();
+
+      workspaceLoadRef.current = load;
+      workspaceLoadUserRef.current = user.id;
+      void load.finally(() => {
+        if (workspaceLoadRef.current === load) {
+          workspaceLoadRef.current = null;
+          workspaceLoadUserRef.current = null;
+        }
+      });
+      return load;
+    },
+    [supabaseResult],
+  );
+
+  useEffect(() => {
+    if (!supabaseResult.configured) {
+      return;
+    }
+
+    let active = true;
+    void supabaseResult.client.auth.getUser().then(({ data, error }) => {
+      if (!active) {
+        return;
+      }
+      if (error || !data.user) {
+        setCloudUser(null);
+        setCloudStatus("demo");
+        return;
+      }
+      void loadWorkspaceForUser(data.user);
+    });
+
+    const { data: authListener } = supabaseResult.client.auth.onAuthStateChange(
+      (_event, session) => {
+        if (!active) {
+          return;
+        }
+        if (session?.user) {
+          void loadWorkspaceForUser(session.user);
+        } else {
+          setCloudUser(null);
+          setProfileName(null);
+          setProfileCoverage(demoProfileCoverage);
+          setJobs(initialJobs);
+          setActivity([...applicationActivity]);
+          setAnsweredFields({});
+          setAnswerDrafts({});
+          setCloudStatus("demo");
+        }
+      },
+    );
+
+    return () => {
+      active = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, [loadWorkspaceForUser, supabaseResult]);
 
   const selectedJob = jobs.find((job) => job.id === selectedJobId) ?? null;
   const reviewCount = jobs.filter((job) => job.status === "review").length;
@@ -121,26 +227,61 @@ export function ApplyFlowDashboard() {
     (job) => job.status === "sent" || job.status === "skipped",
   ).length;
   const sentCount = jobs.filter((job) => job.status === "sent").length;
-  const trackedApplicationCount =
-    initialTrackedCount + Math.max(0, sentCount - initialSentCount);
+  const strongMatchCount = jobs.filter((job) => job.score >= 80).length;
+  const passedRulesCount = jobs.filter((job) => job.score >= 70).length;
+  const trackedApplicationCount = jobs.length;
+  const profileCoverageAverage = Math.round(
+    profileCoverage.reduce((total, item) => total + item.value, 0) /
+      Math.max(profileCoverage.length, 1),
+  );
   const sourceOptions = useMemo(
     () => Array.from(new Set(jobs.map((job) => job.source))).sort(),
     [jobs],
   );
+  const displayName =
+    profileName || cloudUser?.email?.split("@")[0] || "Aljon Mariano";
+  const displayInitials = displayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "AF";
+  const cloudStatusTitle =
+    cloudStatus === "checking"
+      ? "Connecting workspace"
+      : cloudStatus === "syncing"
+        ? "Saving changes"
+        : cloudStatus === "synced"
+          ? "Cloud workspace synced"
+          : cloudStatus === "error"
+            ? "Cloud sync needs attention"
+            : isPaused
+              ? "Discovery paused"
+              : "Discovery active";
+  const cloudStatusDetail =
+    cloudStatus === "checking"
+      ? "Checking your private Supabase account"
+      : cloudStatus === "syncing"
+        ? "Writing to your private workspace"
+        : cloudStatus === "synced"
+          ? "Your decisions persist across sessions"
+          : cloudStatus === "error"
+            ? cloudError || "Open your account to reconnect"
+            : isPaused
+              ? "Your sample queue is unchanged"
+              : "Public portfolio mode with sample data";
 
-  const livePipelineStages = useMemo(
-    () =>
-      pipelineStages.map((stage, index) =>
-        index === pipelineStages.length - 1
-          ? {
-              ...stage,
-              value: trackedApplicationCount,
-              detail: `${Math.round((trackedApplicationCount / pipelineStages[0].value) * 100)}% of listings`,
-            }
-          : stage,
-      ),
-    [trackedApplicationCount],
-  );
+  const pipelineMaximum = Math.max(jobs.length, 1);
+  const livePipelineStages = [
+    { label: "Discovered", value: jobs.length },
+    { label: "Passed rules", value: passedRulesCount },
+    { label: "Fit checked", value: jobs.length },
+    { label: "Strong matches", value: strongMatchCount },
+    { label: "Applications sent", value: sentCount },
+  ].map((stage) => ({
+    ...stage,
+    detail: `${Math.round((stage.value / pipelineMaximum) * 100)}% of listings`,
+  }));
 
   const filteredJobs = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -168,7 +309,7 @@ export function ApplyFlowDashboard() {
     ? selectedJob.screening.filter(
         (answer) =>
           !answer.complete &&
-          !answeredFields[`${selectedJob.id}:${answer.label}`],
+          !answeredFields[`${selectedJob.id}:${answer.label}`]?.trim(),
       ).length
     : 0;
   const selectedCoverLetterStatus =
@@ -304,10 +445,41 @@ export function ApplyFlowDashboard() {
     status: QueueStatus,
     message: string,
   ) => {
+    const previousStatus = jobs.find((job) => job.id === jobId)?.status;
     setJobs((current) =>
       current.map((job) => (job.id === jobId ? { ...job, status } : job)),
     );
     showToast(message);
+
+    if (cloudUser && supabaseResult.configured) {
+      setCloudStatus("syncing");
+      void persistJobStatus(
+        supabaseResult.client,
+        cloudUser.id,
+        jobId,
+        status,
+        message,
+      )
+        .then(() => {
+          setCloudStatus("synced");
+          setCloudError(null);
+        })
+        .catch(async (error: unknown) => {
+          if (previousStatus) {
+            setJobs((current) =>
+              current.map((job) =>
+                job.id === jobId ? { ...job, status: previousStatus } : job,
+              ),
+            );
+          }
+          await loadWorkspaceForUser(cloudUser);
+          setCloudStatus("error");
+          const detail =
+            error instanceof Error ? error.message : "The change could not be saved.";
+          setCloudError(detail);
+          showToast(detail);
+        });
+    }
   };
 
   const openJobReview = (jobId: string) => {
@@ -321,7 +493,7 @@ export function ApplyFlowDashboard() {
   const getMissingAnswerCount = (job: JobMatch) =>
     job.screening.filter(
       (answer) =>
-        !answer.complete && !answeredFields[`${job.id}:${answer.label}`],
+        !answer.complete && !answeredFields[`${job.id}:${answer.label}`]?.trim(),
     ).length;
 
   const handleApprove = (job: JobMatch) => {
@@ -365,10 +537,17 @@ export function ApplyFlowDashboard() {
   };
 
   const handleMarkSent = (job: JobMatch) => {
+    if (cloudUser && !window.confirm(
+      "Confirm that you already submitted this application. ApplyFlow will record the manual submission but will not send anything to the employer.",
+    )) {
+      return;
+    }
     updateJobStatus(
       job.id,
       "sent",
-      `${job.title} was marked as sent in the demo.`,
+      cloudUser
+        ? `${job.title} was recorded as manually submitted.`
+        : `${job.title} was marked as sent in the demo.`,
     );
     recordActivity(
       "Application marked as sent",
@@ -382,17 +561,55 @@ export function ApplyFlowDashboard() {
       showToast("There are no approved applications to process.");
       return;
     }
+    if (cloudUser && !window.confirm(
+      "Confirm that you already submitted every approved application. ApplyFlow will only record these manual submissions.",
+    )) {
+      return;
+    }
+    const readyJobs = jobs.filter((job) => job.status === "ready");
     setJobs((current) =>
       current.map((job) =>
         job.status === "ready" ? { ...job, status: "sent" } : job,
       ),
     );
-    showToast(`${readyCount} demo applications were marked as sent.`);
+    showToast(
+      cloudUser
+        ? `${readyCount} applications were recorded as manually submitted.`
+        : `${readyCount} demo applications were marked as sent.`,
+    );
     recordActivity(
       "Approved queue processed",
       `${readyCount} ${readyCount === 1 ? "application was" : "applications were"} marked as sent`,
       "green",
     );
+
+    if (cloudUser && supabaseResult.configured) {
+      setCloudStatus("syncing");
+      void Promise.allSettled(
+        readyJobs.map((job) =>
+          persistJobStatus(
+            supabaseResult.client,
+            cloudUser.id,
+            job.id,
+            "sent",
+            `${job.title} at ${job.company} was recorded as manually submitted.`,
+          ),
+        ),
+      )
+        .then(async (results) => {
+          await loadWorkspaceForUser(cloudUser);
+          const failures = results.filter((result) => result.status === "rejected");
+          if (failures.length) {
+            const detail = `${failures.length} ${failures.length === 1 ? "record" : "records"} could not be updated. The workspace was reloaded from the database.`;
+            setCloudStatus("error");
+            setCloudError(detail);
+            showToast(detail);
+          } else {
+            setCloudStatus("synced");
+            setCloudError(null);
+          }
+        });
+    }
   };
 
   const navigateTo = (sectionId: string) => {
@@ -433,9 +650,40 @@ export function ApplyFlowDashboard() {
     document.getElementById(`queue-tab-${nextTab}`)?.focus();
   };
 
-  const toggleAnswered = (jobId: string, label: string) => {
+  const saveScreeningAnswer = (jobId: string, label: string) => {
     const key = `${jobId}:${label}`;
-    setAnsweredFields((current) => ({ ...current, [key]: !current[key] }));
+    const nextValue = answerDrafts[key]?.trim() ?? "";
+    if (!nextValue) {
+      showToast("Type an accurate answer before saving it.");
+      return;
+    }
+
+    if (cloudUser && supabaseResult.configured) {
+      setCloudStatus("syncing");
+      void persistAnsweredField(
+        supabaseResult.client,
+        cloudUser.id,
+        jobId,
+        label,
+        nextValue,
+      )
+        .then(() => {
+          setAnsweredFields((current) => ({ ...current, [key]: nextValue }));
+          setCloudStatus("synced");
+          setCloudError(null);
+          showToast(`${label} was saved for this application.`);
+        })
+        .catch((error: unknown) => {
+          setCloudStatus("error");
+          const detail =
+            error instanceof Error ? error.message : "The answer could not be saved.";
+          setCloudError(detail);
+          showToast(detail);
+        });
+    } else {
+      setAnsweredFields((current) => ({ ...current, [key]: nextValue }));
+      showToast(`${label} was saved in this demo session.`);
+    }
   };
 
   const resetDemo = () => {
@@ -450,12 +698,28 @@ export function ApplyFlowDashboard() {
     setMenuOpen(false);
     setActiveNav("overview");
     setAnsweredFields({});
+    setAnswerDrafts({});
+    setProfileCoverage(demoProfileCoverage);
     setNotificationsRead(false);
     const reduceMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
     window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
-    showToast("The demo workspace was reset.");
+    if (cloudUser && supabaseResult.configured) {
+      setCloudStatus("syncing");
+      void resetCloudWorkspace(supabaseResult.client, cloudUser)
+        .then(() => loadWorkspaceForUser(cloudUser))
+        .then(() => showToast("Your cloud sample workspace was reset."))
+        .catch((error: unknown) => {
+          setCloudStatus("error");
+          const detail =
+            error instanceof Error ? error.message : "The cloud workspace could not be reset.";
+          setCloudError(detail);
+          showToast(detail);
+        });
+    } else {
+      showToast("The demo workspace was reset.");
+    }
   };
 
   return (
@@ -509,9 +773,17 @@ export function ApplyFlowDashboard() {
             );
           })}
           <span className={styles.navLabel}>Product</span>
+          <Link className={styles.navItem} href="/jobs/new">
+            <BriefcaseBusiness size={17} />
+            <span>Add a job</span>
+          </Link>
           <Link className={styles.navItem} href="/setup">
             <Settings2 size={17} />
             <span>Profile setup</span>
+          </Link>
+          <Link className={styles.navItem} href="/resumes">
+            <FileText size={17} />
+            <span>Resume library</span>
           </Link>
           <Link className={styles.navItem} href="/extension">
             <WandSparkles size={17} />
@@ -521,22 +793,30 @@ export function ApplyFlowDashboard() {
             <ShieldCheck size={17} />
             <span>Privacy center</span>
           </Link>
+          <Link className={styles.navItem} href={cloudUser ? "/account" : "/auth/sign-in"}>
+            <UserRoundCheck size={17} />
+            <span>{cloudUser ? "Account" : "Sign in"}</span>
+          </Link>
         </nav>
 
         <div className={styles.sidebarBottom}>
           <div className={styles.profileMini}>
-            <div className={styles.avatar}>AM</div>
+            <div className={styles.avatar}>{displayInitials}</div>
             <div>
-              <strong>Aljon Mariano</strong>
-              <span>Based in the Philippines</span>
+              <strong>{displayName}</strong>
+              <span>{cloudUser ? "Private account workspace" : "Public portfolio preview"}</span>
             </div>
             <MoreHorizontal size={17} />
           </div>
           <div className={styles.demoNotice}>
             <ShieldCheck size={16} />
             <div>
-              <strong>Portfolio demo</strong>
-              <span>No external applications are submitted.</span>
+              <strong>{cloudUser ? "Cloud persistence active" : "Portfolio demo"}</strong>
+              <span>
+                {cloudUser
+                  ? "Changes are protected by your Supabase account."
+                  : "No external applications are submitted."}
+              </span>
             </div>
           </div>
         </div>
@@ -569,16 +849,12 @@ export function ApplyFlowDashboard() {
           </div>
           <div className={styles.systemStatus}>
             <span
-              className={`${styles.liveDot} ${isPaused ? styles.liveDotPaused : ""}`}
+              className={`${styles.liveDot} ${isPaused || cloudStatus === "error" ? styles.liveDotPaused : ""}`}
               aria-hidden="true"
             />
             <div>
-              <strong>{isPaused ? "Discovery paused" : "Discovery active"}</strong>
-              <span>
-                {isPaused
-                  ? "Your queue is unchanged"
-                  : "Last sample scan completed 8 minutes ago"}
-              </span>
+              <strong>{cloudStatusTitle}</strong>
+              <span>{cloudStatusDetail}</span>
             </div>
           </div>
           <div className={styles.topActions}>
@@ -618,7 +894,7 @@ export function ApplyFlowDashboard() {
           <section id="overview" className={styles.heroSection}>
             <div className={styles.eyebrow}>
               <WandSparkles size={14} />
-              Demo workspace
+              {cloudUser ? "Private cloud workspace" : "Demo workspace"}
             </div>
             <div className={styles.heroRow}>
               <div>
@@ -629,6 +905,12 @@ export function ApplyFlowDashboard() {
                 </p>
               </div>
               <div className={styles.heroActions}>
+                {cloudUser ? (
+                  <Link className={styles.secondaryButton} href="/jobs/new">
+                    <BriefcaseBusiness size={16} />
+                    Add a job
+                  </Link>
+                ) : null}
                 <button
                   type="button"
                   className={styles.secondaryButton}
@@ -643,7 +925,7 @@ export function ApplyFlowDashboard() {
                   onClick={handleRunQueue}
                 >
                   <Send size={16} />
-                  Process approved
+                  Mark approved as sent
                 </button>
               </div>
             </div>
@@ -655,9 +937,9 @@ export function ApplyFlowDashboard() {
                 <Gauge size={18} />
               </div>
               <span className={styles.metricLabel}>Listings screened</span>
-              <strong className={styles.metricValue}>84</strong>
+              <strong className={styles.metricValue}>{jobs.length}</strong>
               <span className={styles.metricDetail}>
-                <ArrowUpRight size={14} /> 18 since Monday
+                <ArrowUpRight size={14} /> Current review workspace
               </span>
             </article>
             <article className={styles.metricCard}>
@@ -665,8 +947,10 @@ export function ApplyFlowDashboard() {
                 <Target size={18} />
               </div>
               <span className={styles.metricLabel}>Strong matches</span>
-              <strong className={styles.metricValue}>18</strong>
-              <span className={styles.metricDetail}>21% passed your rules</span>
+              <strong className={styles.metricValue}>{strongMatchCount}</strong>
+              <span className={styles.metricDetail}>
+                {jobs.length ? Math.round((strongMatchCount / jobs.length) * 100) : 0}% scored 80 or higher
+              </span>
             </article>
             <article className={styles.metricCard}>
               <div className={`${styles.metricIcon} ${styles.metricIconAmber}`}>
@@ -674,15 +958,17 @@ export function ApplyFlowDashboard() {
               </div>
               <span className={styles.metricLabel}>Needs your review</span>
               <strong className={styles.metricValue}>{reviewCount}</strong>
-              <span className={styles.metricDetail}>{readyCount} approved in this demo</span>
+              <span className={styles.metricDetail}>
+                {readyCount} approved in this {cloudUser ? "workspace" : "demo"}
+              </span>
             </article>
             <article className={styles.metricCard}>
               <div className={`${styles.metricIcon} ${styles.metricIconViolet}`}>
                 <Send size={18} />
               </div>
               <span className={styles.metricLabel}>Applications tracked</span>
-                <strong className={styles.metricValue}>{trackedApplicationCount}</strong>
-              <span className={styles.metricDetail}>Across 4 sample sources</span>
+              <strong className={styles.metricValue}>{trackedApplicationCount}</strong>
+              <span className={styles.metricDetail}>Across {sourceOptions.length} {sourceOptions.length === 1 ? "source" : "sources"}</span>
             </article>
           </section>
 
@@ -708,11 +994,11 @@ export function ApplyFlowDashboard() {
                       role="progressbar"
                       aria-label={`${stage.label}: ${stage.value}`}
                       aria-valuemin={0}
-                      aria-valuemax={pipelineStages[0].value}
+                      aria-valuemax={pipelineMaximum}
                       aria-valuenow={stage.value}
                     >
                       <span
-                        style={{ width: `${Math.max((stage.value / 84) * 100, 8)}%` }}
+                        style={{ width: `${stage.value ? Math.max((stage.value / pipelineMaximum) * 100, 8) : 0}%` }}
                         className={index === 4 ? styles.pipelineBarFinal : styles.pipelineBar}
                       />
                     </div>
@@ -726,8 +1012,8 @@ export function ApplyFlowDashboard() {
               <div className={styles.panelHeader}>
                 <div>
                   <span className={styles.sectionKicker}>Momentum</span>
-                  <h2>Weekly discovery</h2>
-                  <p>Volume, matches, and tracked submissions.</p>
+                  <h2>Sample discovery trend</h2>
+                  <p>Illustrative weekly volume for this portfolio workflow.</p>
                 </div>
                 <div className={styles.chartLegend}>
                   <span><i className={styles.legendDiscovered} />Found</span>
@@ -933,7 +1219,7 @@ export function ApplyFlowDashboard() {
                 <div>
                   <span className={styles.sectionKicker}>Audit trail</span>
                   <h2>Application activity</h2>
-                  <p>A clear record of every demo workflow event.</p>
+                  <p>{cloudUser ? "Your account-owned application audit events." : "A clear record of every demo workflow event."}</p>
                 </div>
                 <button
                   type="button"
@@ -947,7 +1233,7 @@ export function ApplyFlowDashboard() {
                 </button>
               </div>
               <div className={styles.activityList}>
-                {activity.map((item) => (
+                {activity.length ? activity.map((item) => (
                   <div className={styles.activityItem} key={item.id}>
                     <span className={`${styles.activityDot} ${styles[`dot_${item.tone}`]}`} />
                     <div>
@@ -956,7 +1242,13 @@ export function ApplyFlowDashboard() {
                     </div>
                     <time>{item.time}</time>
                   </div>
-                ))}
+                )) : (
+                  <div className={styles.emptyState}>
+                    <Clock3 size={21} />
+                    <h3>No application events yet</h3>
+                    <p>Your reviewed status changes will appear here.</p>
+                  </div>
+                )}
               </div>
             </article>
 
@@ -967,7 +1259,7 @@ export function ApplyFlowDashboard() {
                   <h2>Application profile</h2>
                   <p>Coverage of the data used to prepare applications.</p>
                 </div>
-                <div className={styles.coverageScore}>89%</div>
+                <div className={styles.coverageScore}>{profileCoverageAverage}%</div>
               </div>
               <div className={styles.coverageList}>
                 {profileCoverage.map((item) => (
@@ -989,8 +1281,8 @@ export function ApplyFlowDashboard() {
             <div className={styles.panelHeader}>
               <div>
                 <span className={styles.sectionKicker}>Acquisition</span>
-                <h2>Source performance</h2>
-                <p>Compare sample listing volume with strong-fit yield.</p>
+                <h2>Sample source benchmark</h2>
+                <p>Illustrative listing volume and strong-fit yield.</p>
               </div>
               <span className={styles.periodPill}>Last 7 days</span>
             </div>
@@ -1013,11 +1305,15 @@ export function ApplyFlowDashboard() {
           </section>
 
           <footer className={styles.footer}>
-            <span>ApplyFlow portfolio demo</span>
+            <span>{cloudUser ? "ApplyFlow private workspace" : "ApplyFlow portfolio demo"}</span>
             <div className={styles.footerActions}>
-              <span>Sample data only - review-first automation</span>
+              <span>
+                {cloudUser
+                  ? "Sample queue with persistent review decisions"
+                  : "Sample data only - review-first automation"}
+              </span>
               <button type="button" className={styles.resetButton} onClick={resetDemo}>
-                <RotateCcw size={13} /> Reset demo
+                <RotateCcw size={13} /> {cloudUser ? "Reset cloud sample" : "Reset demo"}
               </button>
             </div>
           </footer>
@@ -1122,22 +1418,41 @@ export function ApplyFlowDashboard() {
                   <div className={styles.screeningList}>
                     {selectedJob.screening.map((answer) => {
                       const overrideKey = `${selectedJob.id}:${answer.label}`;
-                      const complete = answer.complete || answeredFields[overrideKey];
+                      const savedAnswer = answeredFields[overrideKey]?.trim() ?? "";
+                      if (answer.complete) {
+                        return (
+                          <div key={answer.label} className={styles.screeningRow}>
+                            <span className={styles.answerCheck}><Check size={13} /></span>
+                            <span><strong>{answer.label}</strong><small>{answer.value}</small></span>
+                            <span className={styles.answerAction}>Ready</span>
+                          </div>
+                        );
+                      }
+
                       return (
-                        <button
-                          type="button"
-                          key={answer.label}
-                          className={styles.screeningRow}
-                          onClick={() => !answer.complete && toggleAnswered(selectedJob.id, answer.label)}
-                          disabled={answer.complete}
-                          aria-pressed={answer.complete ? undefined : Boolean(complete)}
-                        >
-                          <span className={complete ? styles.answerCheck : styles.answerMissing}>
-                            {complete ? <Check size={13} /> : <CirclePause size={13} />}
+                        <div key={answer.label} className={styles.screeningAnswerRow}>
+                          <span className={savedAnswer ? styles.answerCheck : styles.answerMissing}>
+                            {savedAnswer ? <Check size={13} /> : <CirclePause size={13} />}
                           </span>
-                          <span><strong>{answer.label}</strong><small>{complete && !answer.complete ? "Added for demo review" : answer.value}</small></span>
-                          {!answer.complete ? <span className={styles.answerAction}>{complete ? "Undo" : "Add answer"}</span> : null}
-                        </button>
+                          <label>
+                            <strong>{answer.label}</strong>
+                            <small>{answer.value}</small>
+                            <input
+                              value={answerDrafts[overrideKey] ?? savedAnswer}
+                              onChange={(event) => setAnswerDrafts((current) => ({
+                                ...current,
+                                [overrideKey]: event.target.value,
+                              }))}
+                              placeholder="Type your accurate answer"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => saveScreeningAnswer(selectedJob.id, answer.label)}
+                          >
+                            {savedAnswer ? "Update" : "Save answer"}
+                          </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -1145,7 +1460,7 @@ export function ApplyFlowDashboard() {
               ) : null}
             </div>
             <div className={styles.drawerFooter}>
-              <p><ShieldCheck size={14} /> Nothing leaves this demo without your approval.</p>
+              <p><ShieldCheck size={14} /> ApplyFlow records only the actions you confirm.</p>
               <div>
                 {selectedJob.status === "sent" || selectedJob.status === "skipped" ? (
                   <button
@@ -1170,7 +1485,7 @@ export function ApplyFlowDashboard() {
                     className={styles.drawerApprove}
                     onClick={() => handleMarkSent(selectedJob)}
                   >
-                    <Send size={16} /> Mark as sent
+                    <Send size={16} /> Record as sent
                   </button>
                 ) : selectedJob.status === "sent" ? (
                   <button type="button" className={styles.drawerApprove} disabled>

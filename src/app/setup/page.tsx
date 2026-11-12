@@ -1,48 +1,155 @@
 "use client";
 
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Check,
+  Cloud,
+  CloudOff,
   Download,
   FileJson,
   FileUp,
+  LoaderCircle,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
+  candidateProfileFromProfileRow,
+  candidateProfileToProfileInsert,
   createCandidateProfileDocument,
   emptyCandidateProfile,
+  profileRowHasCandidateProfileDocument,
   restoreCandidateProfile,
   type CandidateProfile,
 } from "@/lib/candidate-profile";
+import type { Json } from "@/lib/database.types";
+import { getBrowserSupabaseClient } from "@/lib/supabase/browser";
 import styles from "./setup.module.css";
 
 const steps = ["Identity", "Experience", "Preferences", "Answers and resume"] as const;
 
 type ImportNotice = { tone: "success" | "error"; message: string } | null;
+type SyncNotice = {
+  state: "checking" | "local" | "synced" | "saving" | "error";
+  message: string;
+};
+
+const localProfileKeyPrefix = "applyflow-setup";
 
 export default function SetupPage() {
+  const router = useRouter();
   const [step, setStep] = useState(0);
   const [data, setData] = useState<CandidateProfile>(emptyCandidateProfile);
+  const dataRef = useRef<CandidateProfile>(emptyCandidateProfile);
   const [saved, setSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [profileReady, setProfileReady] = useState(false);
   const [importNotice, setImportNotice] = useState<ImportNotice>(null);
+  const [syncNotice, setSyncNotice] = useState<SyncNotice>({
+    state: "checking",
+    message: "Checking for a signed-in Supabase profile.",
+  });
 
   useEffect(() => {
-    let frame = 0;
-    try {
-      const stored = window.localStorage.getItem("applyflow-setup");
-      if (stored) {
-        const restored = restoreCandidateProfile(JSON.parse(stored));
-        if (restored) frame = window.requestAnimationFrame(() => setData(restored));
-      }
-    } catch {
-      // The setup remains usable without browser storage.
+    let active = true;
+    let authTimer = 0;
+
+    const supabase = getBrowserSupabaseClient();
+    if (!supabase.configured) {
+      return () => { active = false; };
     }
-    return () => window.cancelAnimationFrame(frame);
-  }, []);
+
+    const client = supabase.client;
+
+    async function loadCloudProfile() {
+      if (!active) return;
+
+      try {
+        const { data: userData, error: userError } = await client.auth.getUser();
+        if (userError) throw userError;
+        if (!userData.user) throw new Error("The signed-in account could not be verified");
+        const localProfile = readLocalProfile(userData.user.id);
+
+        const { data: row, error: profileError } = await client
+          .from("profiles")
+          .select("*")
+          .eq("user_id", userData.user.id)
+          .maybeSingle();
+
+        if (profileError) throw profileError;
+        if (!active) return;
+
+        if (row) {
+          const cloudProfile = candidateProfileFromProfileRow(row);
+          const resolvedProfile = profileRowHasCandidateProfileDocument(row)
+            ? cloudProfile
+            : mergeLegacyCloudProfile(localProfile ?? emptyCandidateProfile, cloudProfile);
+          dataRef.current = resolvedProfile;
+          setData(resolvedProfile);
+          persistLocalProfile(userData.user.id, resolvedProfile);
+          setSyncNotice({
+            state: "synced",
+            message: profileRowHasCandidateProfileDocument(row)
+              ? "Your secure Supabase profile is loaded and ready."
+              : "Your account details were combined with this browser's local profile.",
+          });
+          return;
+        }
+
+        const initialProfile = localProfile ?? {
+          ...emptyCandidateProfile,
+          fullName:
+            typeof userData.user.user_metadata?.full_name === "string"
+              ? userData.user.user_metadata.full_name
+              : "",
+          email: userData.user.email ?? "",
+        };
+        dataRef.current = initialProfile;
+        setData(initialProfile);
+
+        setSyncNotice({
+          state: "synced",
+          message: "You are signed in. Save this setup to create your secure cloud profile.",
+        });
+      } catch (error: unknown) {
+        if (!active) return;
+        setSyncNotice({
+          state: "error",
+          message: `Cloud profile could not be loaded. Your account-scoped browser copy was not changed. ${errorMessage(error)}`,
+        });
+      } finally {
+        if (active) setProfileReady(true);
+      }
+    }
+
+    void loadCloudProfile();
+    const { data: authListener } = client.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
+        dataRef.current = emptyCandidateProfile;
+        setData(emptyCandidateProfile);
+        setProfileReady(false);
+        router.replace("/auth/sign-in?next=/setup");
+        router.refresh();
+        return;
+      }
+      if (event !== "SIGNED_IN" && event !== "USER_UPDATED") return;
+      dataRef.current = emptyCandidateProfile;
+      setData(emptyCandidateProfile);
+      setProfileReady(false);
+      window.clearTimeout(authTimer);
+      authTimer = window.setTimeout(() => void loadCloudProfile(), 0);
+    });
+
+    return () => {
+      active = false;
+      window.clearTimeout(authTimer);
+      authListener.subscription.unsubscribe();
+    };
+  }, [router]);
 
   const readiness = useMemo(() => {
     const required = [
@@ -63,23 +170,94 @@ export default function SetupPage() {
   }, [data]);
 
   function update(key: keyof CandidateProfile, value: string) {
-    setData((current) => ({ ...current, [key]: value }));
+    setData((current) => {
+      const nextData = { ...current, [key]: value };
+      dataRef.current = nextData;
+      return nextData;
+    });
     setSaved(false);
   }
 
-  function next(event: FormEvent) {
+  async function next(event: FormEvent) {
     event.preventDefault();
     if (step < steps.length - 1) {
       setStep((current) => current + 1);
       return;
     }
 
-    try {
-      window.localStorage.setItem("applyflow-setup", JSON.stringify(data));
-    } catch {
-      // A success state is still shown if browser storage is unavailable.
+    setIsSaving(true);
+    setSaved(false);
+    const supabase = getBrowserSupabaseClient();
+
+    if (!supabase.configured) {
+      setSyncNotice({
+        state: "error",
+        message: "Cloud sync is unavailable in this environment.",
+      });
+      setIsSaving(false);
+      return;
     }
-    setSaved(true);
+
+    setSyncNotice({ state: "saving", message: "Saving your browser backup and secure cloud profile." });
+
+    try {
+      const { data: userData, error: userError } = await supabase.client.auth.getUser();
+      if (userError) throw userError;
+
+      if (!userData.user) {
+        throw new Error("The signed-in account could not be verified");
+      }
+
+      const localSaved = persistLocalProfile(userData.user.id, data);
+      const { data: currentRow, error: currentError } = await supabase.client
+        .from("profiles")
+        .select("application_preferences,salary_preferences,schedule_preferences,work_eligibility,equipment_profile")
+        .eq("user_id", userData.user.id)
+        .maybeSingle();
+      if (currentError) throw currentError;
+
+      const payload = candidateProfileToProfileInsert(data, userData.user.id);
+      payload.application_preferences = mergeJsonObjects(
+        currentRow?.application_preferences,
+        payload.application_preferences,
+      );
+      payload.salary_preferences = mergeJsonObjects(
+        currentRow?.salary_preferences,
+        payload.salary_preferences,
+      );
+      payload.schedule_preferences = mergeJsonObjects(
+        currentRow?.schedule_preferences,
+        payload.schedule_preferences,
+      );
+      payload.work_eligibility = mergeJsonObjects(
+        currentRow?.work_eligibility,
+        payload.work_eligibility,
+      );
+      payload.equipment_profile = mergeJsonObjects(
+        currentRow?.equipment_profile,
+        payload.equipment_profile,
+      );
+      const { error: saveError } = await supabase.client
+        .from("profiles")
+        .upsert(payload, { onConflict: "user_id" });
+      if (saveError) throw saveError;
+
+      setSyncNotice({
+        state: "synced",
+        message: localSaved
+          ? "Saved to Supabase and backed up in this browser."
+          : "Saved to Supabase. This browser blocked the optional local backup.",
+      });
+      setSaved(true);
+    } catch (error: unknown) {
+      setSyncNotice({
+        state: "error",
+        message: `The profile could not be synced. ${errorMessage(error)}`,
+      });
+      setSaved(false);
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   async function importProfile(event: ChangeEvent<HTMLInputElement>) {
@@ -90,10 +268,11 @@ export default function SetupPage() {
     try {
       const restored = restoreCandidateProfile(JSON.parse(await file.text()));
       if (!restored) throw new Error("This JSON file is not an ApplyFlow candidate profile");
+      dataRef.current = restored;
       setData(restored);
       setStep(0);
       setSaved(false);
-      setImportNotice({ tone: "success", message: `${file.name} was imported locally.` });
+      setImportNotice({ tone: "success", message: `${file.name} was imported. Save the setup to sync it.` });
     } catch (error: unknown) {
       setImportNotice({
         tone: "error",
@@ -134,7 +313,7 @@ export default function SetupPage() {
             </li>
           ))}
         </ol>
-        <p className={styles.sidebarNote}><ShieldCheck size={15} /> Profile data stays in this browser unless you export it. Resume bytes are not stored in this demo.</p>
+        <p className={styles.sidebarNote}><ShieldCheck size={15} /> Profile data is backed up locally. Signed-in users also get private Supabase sync. Resume bytes are not uploaded from this setup form.</p>
       </aside>
 
       <section className={styles.content}>
@@ -143,7 +322,12 @@ export default function SetupPage() {
           <span>Step {step + 1} of {steps.length}</span>
         </header>
 
-        <form className={styles.form} onSubmit={next}>
+        {!profileReady ? (
+          <div className={styles.loadingProfile} role="status">
+            <LoaderCircle className={styles.syncSpinner} size={22} />
+            <div><strong>Loading your private profile</strong><span>Checking your account and secure cloud copy.</span></div>
+          </div>
+        ) : <form className={styles.form} onSubmit={next}>
           <div className={styles.formHeading}>
             <p>{steps[step]}</p>
             <h1>{stepTitle(step)}</h1>
@@ -159,6 +343,7 @@ export default function SetupPage() {
               <Download size={17} /> Export private JSON
             </button>
             <p><ShieldCheck size={15} /> Use the same JSON file in the Chrome extension. It contains personal data, so keep it private.</p>
+            <SyncStatus notice={syncNotice} />
           </div>
 
           {importNotice ? (
@@ -242,7 +427,7 @@ export default function SetupPage() {
                 </label>
                 <p className={styles.resumeNote}>The browser demo remembers only the filename. Select the real PDF again inside the extension when attaching it to a supported application.</p>
                 {saved ? (
-                  <div className={styles.savedMessage}><Check size={18} /><span><strong>Setup saved.</strong> Export this private profile and import it in the Chrome extension.</span></div>
+                  <div className={styles.savedMessage}><Check size={18} /><span><strong>Setup saved.</strong> {syncNotice.message}</span></div>
                 ) : null}
               </div>
             </div>
@@ -252,14 +437,88 @@ export default function SetupPage() {
             <button type="button" className={styles.secondary} onClick={() => setStep((current) => Math.max(0, current - 1))} disabled={step === 0}>
               Back
             </button>
-            <button type="submit" className={styles.primary}>
-              {step === steps.length - 1 ? "Save private setup" : "Continue"} <ArrowRight size={16} />
+            <button type="submit" className={styles.primary} disabled={isSaving}>
+              {isSaving ? "Saving..." : step === steps.length - 1 ? "Save private setup" : "Continue"} <ArrowRight size={16} />
             </button>
           </footer>
-        </form>
+        </form>}
       </section>
     </main>
   );
+}
+
+function SyncStatus({ notice }: { notice: SyncNotice }) {
+  const icon = notice.state === "checking" || notice.state === "saving"
+    ? <LoaderCircle className={styles.syncSpinner} size={17} />
+    : notice.state === "synced"
+      ? <Cloud size={17} />
+      : notice.state === "error"
+        ? <AlertTriangle size={17} />
+        : <CloudOff size={17} />;
+  const title = notice.state === "checking"
+    ? "Checking sync"
+    : notice.state === "saving"
+      ? "Syncing securely"
+      : notice.state === "synced"
+        ? "Cloud sync ready"
+        : notice.state === "error"
+          ? "Sync needs attention"
+          : "Local backup mode";
+
+  return (
+    <div className={`${styles.syncStatus} ${styles[`sync${notice.state}`]}`} role="status" aria-live="polite">
+      {icon}
+      <span><strong>{title}</strong>{notice.message}</span>
+    </div>
+  );
+}
+
+function accountLocalProfileKey(userId: string) {
+  return `${localProfileKeyPrefix}:${userId}`;
+}
+
+function readLocalProfile(userId: string) {
+  try {
+    const stored = window.localStorage.getItem(accountLocalProfileKey(userId));
+    return stored ? restoreCandidateProfile(JSON.parse(stored)) : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistLocalProfile(userId: string, profile: CandidateProfile) {
+  try {
+    window.localStorage.setItem(accountLocalProfileKey(userId), JSON.stringify(profile));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function jsonObject(value: Json | undefined): Record<string, Json | undefined> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value
+    : {};
+}
+
+function mergeJsonObjects(existing: Json | undefined, next: Json | undefined): Json {
+  return { ...jsonObject(existing), ...jsonObject(next) };
+}
+
+function mergeLegacyCloudProfile(local: CandidateProfile, cloud: CandidateProfile) {
+  const merged = { ...local };
+  for (const key of Object.keys(emptyCandidateProfile) as Array<keyof CandidateProfile>) {
+    if (cloud[key].trim() && (cloud[key] !== emptyCandidateProfile[key] || !local[key].trim())) {
+      merged[key] = cloud[key];
+    }
+  }
+  return merged;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error && error.message.trim()
+    ? error.message
+    : "Please try again after checking your connection.";
 }
 
 function Field({

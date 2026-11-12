@@ -21,6 +21,9 @@ ApplyFlow is review-first. It prepares safe fields and resume attachments, but i
 - Sensitive question detection and blocking
 - Field highlighting and post-fill verification
 - Private resume storage through Supabase
+- Email and password accounts with protected workspace routes
+- Database-backed profiles, jobs, decisions, answers, and audit events
+- Manual real-job capture with salary and fit review
 
 ## Stack
 
@@ -42,27 +45,41 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-The dashboard includes a complete portfolio demo when Supabase is not configured. Connect Supabase to persist real user data.
+The dashboard includes a complete portfolio demo for signed-out visitors. Signed-in users get a private Supabase workspace whose decisions persist across sessions.
 
 ## Supabase setup
 
 1. Create a free Supabase project.
 2. Open the SQL editor.
-3. Run the migration in `supabase/migrations`.
+3. Run every migration in `supabase/migrations` in filename order.
 4. Copy the project URL and publishable key into `.env.local`.
-5. Keep the service role key server-only if a later server task requires it.
+5. In Supabase Authentication URL Configuration, set the Site URL to the deployed Vercel domain.
+6. Add `https://automated-resume-sender.vercel.app/auth/callback` as an allowed redirect URL.
 
 Required environment variables:
 
 ```text
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
 ```
+
+No service role key is required by the current application. If a later server task needs one, keep it server-only and never expose it through a `NEXT_PUBLIC_` variable.
 
 The migration creates user-owned tables, row level security policies, indexes, timestamp triggers, and a private `resumes` storage bucket.
 
 Never commit a resume PDF or `.env.local`.
+
+## Private workspace flow
+
+1. Create an account at `/auth/sign-up` and confirm the email if Supabase email confirmation is enabled.
+2. Complete `/setup` to save the account-scoped candidate profile.
+3. Upload one or more files in `/resumes` and choose a default resume.
+4. Add a real opportunity in `/jobs/new`.
+5. Review missing screening answers and save the exact answer before approving a job.
+6. Use the Chrome extension on a supported application page to fill safe fields for review.
+7. Submit on the employer site yourself, then use Record as sent to add the manual submission to the audit trail.
+
+ApplyFlow never treats a queue action as an external submission. The sent status is recorded only after the user confirms that the application was already submitted.
 
 ## Chrome extension setup
 
@@ -79,6 +96,8 @@ Then:
 3. Choose Load unpacked.
 4. Select `extension/dist`.
 5. Open a job application page and choose the ApplyFlow extension icon.
+
+The extension side panel includes a direct link to the production dashboard at `https://automated-resume-sender.vercel.app/`. The dashboard and extension do not currently synchronize profiles automatically. Use the private JSON export and import flow below to move candidate data deliberately.
 
 The assistant scans the current page only after the user invokes it. The generic adapter never clicks the final employer Submit button.
 
@@ -112,9 +131,10 @@ Direct page assistance can be enabled only after written permission from OnlineJ
 2. Keep the root directory at the repository root.
 3. Use the Next.js preset.
 4. Add the Supabase environment variables.
-5. Deploy.
+5. Deploy and configure the Supabase Site URL and callback URL shown above.
+6. Redeploy after adding or changing environment variables.
 
-The extension is packaged separately. Update its production app origin after the Vercel URL is known, then rebuild it.
+The extension is packaged separately and is configured for `https://automated-resume-sender.vercel.app/`. Rebuild `extension/dist` after any extension source or manifest change.
 
 ## Validation
 
