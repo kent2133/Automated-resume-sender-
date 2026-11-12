@@ -207,6 +207,77 @@
   line-height: 1.65;
 }
 
+.profileTools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: -18px 0 28px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(12, 15, 19, 0.68);
+}
+
+.profileTools p {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.importButton,
+.exportButton {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  color: var(--foreground);
+  background: var(--surface);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.importButton input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.importButton:hover,
+.exportButton:hover {
+  border-color: rgba(138, 180, 255, 0.5);
+}
+
+.importSuccess,
+.importError {
+  margin: -14px 0 24px;
+  padding: 12px 14px;
+  border-radius: 11px;
+  font-size: 0.74rem;
+}
+
+.importSuccess {
+  color: #b9eee4;
+  border: 1px solid rgba(67, 216, 186, 0.22);
+  background: var(--teal-soft);
+}
+
+.importError {
+  color: #ffd2c2;
+  border: 1px solid rgba(255, 122, 88, 0.24);
+  background: rgba(255, 122, 88, 0.08);
+}
+
 .fieldGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -232,7 +303,9 @@
 
 .field input,
 .fieldWide input,
-.field select {
+.field select,
+.field textarea,
+.fieldWide textarea {
   width: 100%;
   min-height: 48px;
   padding: 0 14px;
@@ -244,8 +317,18 @@
 
 .field input:hover,
 .fieldWide input:hover,
-.field select:hover {
+.field select:hover,
+.field textarea:hover,
+.fieldWide textarea:hover {
   border-color: rgba(138, 180, 255, 0.4);
+}
+
+.field textarea,
+.fieldWide textarea {
+  min-height: 104px;
+  padding-block: 12px;
+  resize: vertical;
+  line-height: 1.55;
 }
 
 .answerList {
@@ -281,6 +364,7 @@
 }
 
 .resumeArea {
+  grid-column: 1 / -1;
   display: grid;
   gap: 14px;
 }
@@ -421,12 +505,15 @@
 
 @media (max-width: 580px) {
   .fieldGrid,
-  .answerList {
+  .answerList,
+  .profileTools {
     grid-template-columns: 1fr;
   }
 
   .fieldWide,
-  .policyCard {
+  .policyCard,
+  .resumeArea,
+  .profileTools p {
     grid-column: 1;
   }
 

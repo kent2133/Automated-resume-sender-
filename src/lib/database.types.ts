@@ -45,6 +45,102 @@ export type HandoffStatus =
   | "cancelled"
   | "failed";
 
+export type CandidateEmploymentRecord = {
+  employer: string;
+  title: string;
+  startDate?: string;
+  endDate?: string;
+  isCurrent?: boolean;
+  employmentType?: EmploymentType;
+  workArrangement?: WorkArrangement;
+  summary?: string;
+};
+
+export type CandidateEducationRecord = {
+  institution: string;
+  degree?: string;
+  fieldOfStudy?: string;
+  startDate?: string;
+  endDate?: string;
+  completed?: boolean;
+  notes?: string;
+};
+
+export type CandidateCredential = {
+  name: string;
+  issuer?: string;
+  issuedAt?: string;
+  expiresAt?: string;
+  credentialId?: string;
+  notes?: string;
+};
+
+export type CandidateLanguage = {
+  name: string;
+  proficiency?: string;
+};
+
+export type CandidateSalaryFloor = {
+  currency: string;
+  minimumMonthly: number;
+  preferredMonthly?: number;
+  isHardMinimum?: boolean;
+};
+
+export type CandidateSalaryPreferences = {
+  monthlyFloors?: CandidateSalaryFloor[];
+  negotiable?: boolean;
+  notes?: string;
+};
+
+export type CandidateSchedulePreferences = {
+  remoteOnly?: boolean;
+  acceptsNightShift?: boolean;
+  timezoneFlexibility?: string;
+  availableFrom?: string;
+  hoursNotes?: string;
+};
+
+export type CandidateWorkEligibility = {
+  passportAvailable?: boolean;
+  authorizationStatus?: string;
+  sponsorshipStatus?: string;
+  authorizationReviewRequired?: boolean;
+  notes?: string;
+};
+
+export type CandidateEquipmentProfile = {
+  primaryComputer?: string;
+  memoryGb?: number;
+  gpu?: string;
+  storageTb?: number;
+  internetMbps?: number;
+  backupPower?: string[];
+  backupComputer?: string;
+  notes?: string;
+};
+
+export type CandidateApplicationPreferences = {
+  acceptsAiFriendlyRoles?: boolean;
+  usesAiAssistedDevelopment?: boolean;
+  additionalRoleKeywords?: string[];
+  blockedEmployers?: string[];
+  blockedKeywords?: string[];
+  notes?: string;
+};
+
+export type CandidateProfileDetails = {
+  employmentHistory: CandidateEmploymentRecord[];
+  educationHistory: CandidateEducationRecord[];
+  credentials: CandidateCredential[];
+  languages: CandidateLanguage[];
+  salaryPreferences: CandidateSalaryPreferences;
+  schedulePreferences: CandidateSchedulePreferences;
+  workEligibility: CandidateWorkEligibility;
+  equipmentProfile: CandidateEquipmentProfile;
+  applicationPreferences: CandidateApplicationPreferences;
+};
+
 type Relationship = {
   foreignKeyName: string;
   columns: string[];
@@ -62,6 +158,9 @@ type TableDefinition<Row, Insert, Update> = {
 
 export type ProfileRow = {
   user_id: string;
+  first_name: string | null;
+  middle_name: string | null;
+  last_name: string | null;
   full_name: string | null;
   contact_email: string | null;
   phone: string | null;
@@ -80,6 +179,19 @@ export type ProfileRow = {
   salary_currency: string;
   salary_period: SalaryPeriod;
   years_experience: number | null;
+  current_title: string | null;
+  current_employer: string | null;
+  skills: string[];
+  availability: string | null;
+  employment_history: Json;
+  education_history: Json;
+  credentials: Json;
+  languages: Json;
+  salary_preferences: Json;
+  schedule_preferences: Json;
+  work_eligibility: Json;
+  equipment_profile: Json;
+  application_preferences: Json;
   requires_sponsorship: boolean | null;
   willing_to_relocate: boolean | null;
   notice_period_days: number | null;
@@ -89,6 +201,9 @@ export type ProfileRow = {
 
 export type ProfileInsert = {
   user_id: string;
+  first_name?: string | null;
+  middle_name?: string | null;
+  last_name?: string | null;
   full_name?: string | null;
   contact_email?: string | null;
   phone?: string | null;
@@ -107,6 +222,19 @@ export type ProfileInsert = {
   salary_currency?: string;
   salary_period?: SalaryPeriod;
   years_experience?: number | null;
+  current_title?: string | null;
+  current_employer?: string | null;
+  skills?: string[];
+  availability?: string | null;
+  employment_history?: Json;
+  education_history?: Json;
+  credentials?: Json;
+  languages?: Json;
+  salary_preferences?: Json;
+  schedule_preferences?: Json;
+  work_eligibility?: Json;
+  equipment_profile?: Json;
+  application_preferences?: Json;
   requires_sponsorship?: boolean | null;
   willing_to_relocate?: boolean | null;
   notice_period_days?: number | null;

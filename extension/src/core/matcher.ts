@@ -26,6 +26,8 @@ interface MatchRule {
 
 const rules: MatchRule[] = [
   { key: "firstName", label: "First name", patterns: [/\bfirst name\b/i, /\bgiven name\b/i, /^first$/i], autocomplete: ["given-name"] },
+  { key: "middleName", label: "Middle name", patterns: [/\bmiddle name\b/i], autocomplete: ["additional-name"] },
+  { key: "middleInitial", label: "Middle initial", patterns: [/\bmiddle initial\b/i, /\bm\.i\.\b/i] },
   { key: "lastName", label: "Last name", patterns: [/\blast name\b/i, /\bsurname\b/i, /\bfamily name\b/i, /^last$/i], autocomplete: ["family-name"] },
   { key: "fullName", label: "Full name", patterns: [/\bfull name\b/i, /\byour name\b/i, /^name$/i], autocomplete: ["name"] },
   { key: "email", label: "Email", patterns: [/\be-?mail(?: address)?\b/i], autocomplete: ["email"], preferredTypes: ["email"] },
@@ -35,8 +37,14 @@ const rules: MatchRule[] = [
   { key: "linkedinUrl", label: "LinkedIn", patterns: [/linkedin/i] },
   { key: "githubUrl", label: "GitHub", patterns: [/github/i] },
   { key: "yearsExperience", label: "Years of experience", patterns: [/years?.*(?:professional )?experience/i, /experience.*years?/i] },
-  { key: "desiredSalary", label: "Desired salary", patterns: [/desired salary/i, /salary expectation/i, /expected compensation/i, /expected salary/i] },
-  { key: "workAuthorization", label: "Work authorization", patterns: [/authorized to work/i, /work authorization/i, /legally (?:eligible|authorized)/i] },
+  { key: "currentTitle", label: "Current title", patterns: [/current (?:job )?title/i, /current role/i, /present position/i] },
+  { key: "currentEmployer", label: "Current employer", patterns: [/current (?:company|employer)/i, /present employer/i] },
+  { key: "targetRoles", label: "Target roles", patterns: [/target roles?/i, /desired (?:role|position)/i, /position sought/i] },
+  { key: "workMode", label: "Work mode", patterns: [/preferred work (?:mode|arrangement)/i, /work arrangement/i] },
+  { key: "shiftAvailability", label: "Shift availability", patterns: [/shift availability/i, /available shifts?/i, /night shift availability/i] },
+  { key: "startAvailability", label: "Start availability", patterns: [/when can you start/i, /start availability/i, /available start date/i, /notice period/i] },
+  { key: "timezoneAvailability", label: "Timezone availability", patterns: [/timezone availability/i, /time zone availability/i, /working time ?zone/i] },
+  { key: "skillsSummary", label: "Skills summary", patterns: [/skills summary/i, /technical skills/i, /relevant skills/i] },
   { key: "coverLetter", label: "Cover letter", patterns: [/cover letter/i, /why (?:do you|are you).*(?:want|interested)/i, /message to (?:the )?hiring/i] },
 ];
 
@@ -98,6 +106,10 @@ export function matchField(descriptor: FieldDescriptor): FieldMatch {
     }
 
     if (rule.key === "coverLetter" && tagName !== "textarea" && score < 0.9) {
+      score = 0;
+    }
+
+    if (rule.key === "skillsSummary" && tagName !== "textarea" && score < 0.9) {
       score = 0;
     }
 

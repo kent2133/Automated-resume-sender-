@@ -21,6 +21,8 @@ const rules: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /criminal record|background check|medical condition|health information/i, reason: "Sensitive personal disclosures require manual review" },
   { pattern: /signature|certify|attest|legal name.*signature/i, reason: "Legal attestations require manual review" },
   { pattern: /salary history|previous salary|current salary/i, reason: "Salary history requires manual review" },
+  { pattern: /desired salary|salary expectation|expected compensation|expected salary/i, reason: "Salary and currency must be reviewed for this role" },
+  { pattern: /authorized to work|work authorization|legally (?:eligible|authorized)|visa sponsorship|require sponsorship/i, reason: "Work eligibility must be reviewed for this country and role" },
 ];
 
 export function detectSensitiveField(descriptor: SensitiveDescriptor): SensitiveResult {

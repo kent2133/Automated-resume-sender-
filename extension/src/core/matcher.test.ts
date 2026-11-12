@@ -24,6 +24,15 @@ describe("matchField", () => {
   it("does not fill consent checkboxes", () => {
     expect(matchField({ label: "I agree", type: "checkbox" }).confidence).toBe(0);
   });
+
+  it("matches verified current work fields", () => {
+    expect(matchField({ label: "Current job title" }).profileKey).toBe("currentTitle");
+    expect(matchField({ label: "Current employer" }).profileKey).toBe("currentEmployer");
+  });
+
+  it("matches availability without treating it as a legal answer", () => {
+    expect(matchField({ label: "When can you start?" }).profileKey).toBe("startAvailability");
+  });
 });
 
 describe("detectSensitiveField", () => {
@@ -39,5 +48,10 @@ describe("detectSensitiveField", () => {
 
   it("allows ordinary contact fields", () => {
     expect(detectSensitiveField({ label: "Email address", type: "email" }).blocked).toBe(false);
+  });
+
+  it("keeps salary and work eligibility manual", () => {
+    expect(detectSensitiveField({ label: "Expected salary" }).blocked).toBe(true);
+    expect(detectSensitiveField({ label: "Are you authorized to work here?" }).blocked).toBe(true);
   });
 });

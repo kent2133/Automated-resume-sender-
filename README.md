@@ -82,6 +82,24 @@ Then:
 
 The assistant scans the current page only after the user invokes it. The generic adapter never clicks the final employer Submit button.
 
+### Private candidate profile
+
+The setup page and Chrome extension share a versioned JSON profile format. This keeps personal contact details, salary floors, employment details, availability, equipment, and reusable answers out of the public source code.
+
+1. Open `/setup` in the dashboard.
+2. Import a private ApplyFlow JSON profile or complete the four setup steps.
+3. Save the setup and export the private JSON.
+4. Open the extension, expand Private candidate data, and import the same JSON.
+5. Select the resume PDF from the device when an eligible application uploader is present.
+
+The `private` and `resumes` directories are ignored by Git. Never commit an exported candidate profile because it contains application-only personal data.
+
+### Where it works
+
+The generic assistant is designed for standard HTML application forms on employer career pages and common applicant tracking pages. It only accesses the active tab after the user opens it, fills high-confidence professional fields for review, and leaves salary, work eligibility, sensitive disclosures, consent, CAPTCHA, and final submission manual.
+
+A site-specific adapter should be reviewed against that site's current terms before enabling deeper automation. Unsupported custom controls remain manual.
+
 ### OnlineJobs.ph
 
 OnlineJobs.ph is intentionally manual-only. Its terms prohibit automated means without express permission, so ApplyFlow does not scan, highlight, fill, attach files, spend Apply Points, or submit on that origin. The side panel remains available as a companion for preparing and copying reviewed profile details and answer snippets.

@@ -22,7 +22,7 @@ The migration creates the private `resumes` bucket, so it does not need to be cr
 
 ## Data model
 
-- `profiles` stores application-ready contact details and job preferences for one authenticated user.
+- `profiles` stores application-ready contact details, structured name fields, current work, skills, availability, and private preference objects for one authenticated user.
 - `profile_answers` stores reusable answers for common required application questions.
 - `resumes` stores private file metadata, parsed text, skills, versions, and the default resume selection.
 - `jobs` stores normalized job listings plus the original source payload.
@@ -32,6 +32,10 @@ The migration creates the private `resumes` bucket, so it does not need to be cr
 - `extension_handoffs` stores short-lived, hashed handoff tokens used by the browser extension and web app.
 
 Every user-owned table includes `user_id`. Composite foreign keys prevent records belonging to different users from being linked together.
+
+The expanded profile fields support concurrent employment, education, credentials, languages, multi-currency salary floors, remote and shift preferences, work-eligibility review, workstation readiness, and AI-assisted development preferences. These flexible values are stored as JSON objects or arrays so the profile can evolve without adding personal data to migrations. Keep actual candidate values in authenticated rows only.
+
+Passport availability is informational. It must never be treated as proof of work authorization. Keep `authorizationReviewRequired` enabled until the candidate has reviewed the rules for a specific role and country.
 
 ## Security model
 

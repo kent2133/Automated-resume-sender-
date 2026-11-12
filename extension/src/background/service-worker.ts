@@ -1,7 +1,7 @@
 import {
   isPanelRequest,
+  migrateCandidateProfile,
   type ContentRequest,
-  type DemoProfile,
   type PanelRequest,
   type RuntimeResponse,
 } from "../shared/contracts";
@@ -17,7 +17,8 @@ async function prepareSidePanel(): Promise<void> {
 chrome.runtime.onInstalled.addListener(() => {
   void prepareSidePanel();
   void chrome.storage.local.get(PROFILE_KEY).then((stored) => {
-    if (!stored[PROFILE_KEY]) void chrome.storage.local.set({ [PROFILE_KEY]: DEMO_PROFILE });
+    const profile = migrateCandidateProfile(stored[PROFILE_KEY], DEMO_PROFILE) ?? DEMO_PROFILE;
+    void chrome.storage.local.set({ [PROFILE_KEY]: profile });
   });
 });
 
@@ -59,7 +60,9 @@ async function handleRequest(request: PanelRequest): Promise<unknown> {
   switch (request.type) {
     case "GET_PROFILE": {
       const stored = await chrome.storage.local.get(PROFILE_KEY);
-      return (stored[PROFILE_KEY] as DemoProfile | undefined) ?? DEMO_PROFILE;
+      const profile = migrateCandidateProfile(stored[PROFILE_KEY], DEMO_PROFILE) ?? DEMO_PROFILE;
+      if (stored[PROFILE_KEY] !== profile) await chrome.storage.local.set({ [PROFILE_KEY]: profile });
+      return profile;
     }
     case "GET_SITE_POLICY": {
       const tab = await getActiveTab();

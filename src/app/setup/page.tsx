@@ -1,58 +1,42 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Check, FileUp, ShieldCheck, Sparkles } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Download,
+  FileJson,
+  FileUp,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  createCandidateProfileDocument,
+  emptyCandidateProfile,
+  restoreCandidateProfile,
+  type CandidateProfile,
+} from "@/lib/candidate-profile";
 import styles from "./setup.module.css";
 
-type SetupState = {
-  fullName: string;
-  email: string;
-  phone: string;
-  location: string;
-  portfolioUrl: string;
-  linkedInUrl: string;
-  githubUrl: string;
-  targetRoles: string;
-  minimumSalary: string;
-  workMode: string;
-  authorization: string;
-  sponsorship: string;
-  noticePeriod: string;
-  resumeName: string;
-};
+const steps = ["Identity", "Experience", "Preferences", "Answers and resume"] as const;
 
-const emptySetup: SetupState = {
-  fullName: "",
-  email: "",
-  phone: "",
-  location: "Philippines",
-  portfolioUrl: "",
-  linkedInUrl: "",
-  githubUrl: "",
-  targetRoles: "Full-stack developer, frontend developer",
-  minimumSalary: "",
-  workMode: "Remote or hybrid",
-  authorization: "Review each time",
-  sponsorship: "Review each time",
-  noticePeriod: "Immediately available",
-  resumeName: "",
-};
-
-const steps = ["Profile", "Preferences", "Answer vault", "Resume"] as const;
+type ImportNotice = { tone: "success" | "error"; message: string } | null;
 
 export default function SetupPage() {
   const [step, setStep] = useState(0);
-  const [data, setData] = useState<SetupState>(emptySetup);
+  const [data, setData] = useState<CandidateProfile>(emptyCandidateProfile);
   const [saved, setSaved] = useState(false);
+  const [importNotice, setImportNotice] = useState<ImportNotice>(null);
 
   useEffect(() => {
     let frame = 0;
     try {
       const stored = window.localStorage.getItem("applyflow-setup");
       if (stored) {
-        const restored = { ...emptySetup, ...JSON.parse(stored) as Partial<SetupState> };
-        frame = window.requestAnimationFrame(() => setData(restored));
+        const restored = restoreCandidateProfile(JSON.parse(stored));
+        if (restored) frame = window.requestAnimationFrame(() => setData(restored));
       }
     } catch {
       // The setup remains usable without browser storage.
@@ -61,11 +45,24 @@ export default function SetupPage() {
   }, []);
 
   const readiness = useMemo(() => {
-    const required = [data.fullName, data.email, data.location, data.targetRoles, data.workMode, data.resumeName];
-    return Math.round(required.filter((value) => value.trim()).length / required.length * 100);
+    const required = [
+      data.firstName,
+      data.lastName,
+      data.fullName,
+      data.email,
+      data.location,
+      data.currentTitle,
+      data.currentEmployer,
+      data.targetRoles,
+      data.workMode,
+      data.startAvailability,
+      data.skillsSummary,
+      data.resumeFileName,
+    ];
+    return Math.round((required.filter((value) => value.trim()).length / required.length) * 100);
   }, [data]);
 
-  function update(key: keyof SetupState, value: string) {
+  function update(key: keyof CandidateProfile, value: string) {
     setData((current) => ({ ...current, [key]: value }));
     setSaved(false);
   }
@@ -80,9 +77,42 @@ export default function SetupPage() {
     try {
       window.localStorage.setItem("applyflow-setup", JSON.stringify(data));
     } catch {
-      // A success state is still shown if storage is unavailable.
+      // A success state is still shown if browser storage is unavailable.
     }
     setSaved(true);
+  }
+
+  async function importProfile(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const file = input.files?.item(0);
+    if (!file) return;
+
+    try {
+      const restored = restoreCandidateProfile(JSON.parse(await file.text()));
+      if (!restored) throw new Error("This JSON file is not an ApplyFlow candidate profile");
+      setData(restored);
+      setStep(0);
+      setSaved(false);
+      setImportNotice({ tone: "success", message: `${file.name} was imported locally.` });
+    } catch (error: unknown) {
+      setImportNotice({
+        tone: "error",
+        message: error instanceof Error ? error.message : "The profile could not be imported",
+      });
+    } finally {
+      input.value = "";
+    }
+  }
+
+  function exportProfile() {
+    const payload = JSON.stringify(createCandidateProfileDocument(data), null, 2);
+    const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "applyflow-private-profile.json";
+    link.click();
+    URL.revokeObjectURL(url);
+    setImportNotice({ tone: "success", message: "A private profile copy was downloaded to this device." });
   }
 
   return (
@@ -104,7 +134,7 @@ export default function SetupPage() {
             </li>
           ))}
         </ol>
-        <p className={styles.sidebarNote}><ShieldCheck size={15} /> Resume bytes are not stored in this browser demo.</p>
+        <p className={styles.sidebarNote}><ShieldCheck size={15} /> Profile data stays in this browser unless you export it. Resume bytes are not stored in this demo.</p>
       </aside>
 
       <section className={styles.content}>
@@ -120,65 +150,101 @@ export default function SetupPage() {
             <span>{stepLead(step)}</span>
           </div>
 
+          <div className={styles.profileTools}>
+            <label className={styles.importButton}>
+              <FileJson size={17} /> Import private JSON
+              <input type="file" accept="application/json,.json" onChange={importProfile} />
+            </label>
+            <button className={styles.exportButton} type="button" onClick={exportProfile}>
+              <Download size={17} /> Export private JSON
+            </button>
+            <p><ShieldCheck size={15} /> Use the same JSON file in the Chrome extension. It contains personal data, so keep it private.</p>
+          </div>
+
+          {importNotice ? (
+            <div className={importNotice.tone === "success" ? styles.importSuccess : styles.importError} role="status">
+              {importNotice.message}
+            </div>
+          ) : null}
+
           {step === 0 ? (
             <div className={styles.fieldGrid}>
-              <Field label="Full name" value={data.fullName} onChange={(value) => update("fullName", value)} required />
+              <Field label="First name" value={data.firstName} onChange={(value) => update("firstName", value)} required />
+              <Field label="Middle name" value={data.middleName} onChange={(value) => update("middleName", value)} />
+              <Field label="Middle initial" value={data.middleInitial} onChange={(value) => update("middleInitial", value)} />
+              <Field label="Last name" value={data.lastName} onChange={(value) => update("lastName", value)} required />
+              <Field label="Full legal name" value={data.fullName} onChange={(value) => update("fullName", value)} required wide />
               <Field label="Email" type="email" value={data.email} onChange={(value) => update("email", value)} required />
               <Field label="Phone" type="tel" value={data.phone} onChange={(value) => update("phone", value)} />
               <Field label="Location" value={data.location} onChange={(value) => update("location", value)} required />
               <Field label="Portfolio URL" type="url" value={data.portfolioUrl} onChange={(value) => update("portfolioUrl", value)} />
-              <Field label="LinkedIn URL" type="url" value={data.linkedInUrl} onChange={(value) => update("linkedInUrl", value)} />
+              <Field label="LinkedIn URL" type="url" value={data.linkedinUrl} onChange={(value) => update("linkedinUrl", value)} />
               <Field label="GitHub URL" type="url" value={data.githubUrl} onChange={(value) => update("githubUrl", value)} wide />
             </div>
           ) : null}
 
           {step === 1 ? (
             <div className={styles.fieldGrid}>
+              <Field label="Current title" value={data.currentTitle} onChange={(value) => update("currentTitle", value)} required />
+              <Field label="Current employer" value={data.currentEmployer} onChange={(value) => update("currentEmployer", value)} required />
+              <Field label="Concurrent or project title" value={data.secondaryTitle} onChange={(value) => update("secondaryTitle", value)} />
+              <Field label="Concurrent or project employer" value={data.secondaryEmployer} onChange={(value) => update("secondaryEmployer", value)} />
+              <Field label="Work history summary" value={data.workHistorySummary} onChange={(value) => update("workHistorySummary", value)} wide multiline />
+              <Field label="Education summary" value={data.educationSummary} onChange={(value) => update("educationSummary", value)} wide multiline />
+              <Field label="Credentials summary" value={data.credentialsSummary} onChange={(value) => update("credentialsSummary", value)} wide />
+              <Field label="Languages" value={data.languagesSummary} onChange={(value) => update("languagesSummary", value)} wide />
+              <Field label="Years of experience" value={data.yearsExperience} onChange={(value) => update("yearsExperience", value)} />
               <Field label="Target roles" value={data.targetRoles} onChange={(value) => update("targetRoles", value)} required wide />
-              <Field label="Minimum monthly salary" type="number" value={data.minimumSalary} onChange={(value) => update("minimumSalary", value)} />
-              <SelectField label="Preferred work mode" value={data.workMode} onChange={(value) => update("workMode", value)} options={["Remote", "Hybrid", "On-site", "Remote or hybrid"]} />
-              <Field label="Availability" value={data.noticePeriod} onChange={(value) => update("noticePeriod", value)} wide />
+              <Field label="Skills summary" value={data.skillsSummary} onChange={(value) => update("skillsSummary", value)} required wide multiline />
+              <Field label="AI-assisted development preference" value={data.aiAssistedWorkPreference} onChange={(value) => update("aiAssistedWorkPreference", value)} wide />
             </div>
           ) : null}
 
           {step === 2 ? (
-            <div className={styles.answerList}>
-              <SelectField
-                label="Work authorization"
-                value={data.authorization}
-                onChange={(value) => update("authorization", value)}
-                options={["Review each time", "Authorized to work", "Not authorized"]}
-              />
-              <SelectField
-                label="Sponsorship requirement"
-                value={data.sponsorship}
-                onChange={(value) => update("sponsorship", value)}
-                options={["Review each time", "No sponsorship required", "Sponsorship required"]}
-              />
-              <div className={styles.policyCard}>
-                <Sparkles size={18} />
-                <div><strong>No guessed answers</strong><p>Questions without a verified answer will be highlighted and left empty for review.</p></div>
-              </div>
+            <div className={styles.fieldGrid}>
+              <Field label="PHP hard monthly minimum" type="number" value={data.minimumMonthlySalaryPhp} onChange={(value) => update("minimumMonthlySalaryPhp", value)} />
+              <Field label="PHP preferred monthly salary" type="number" value={data.preferredMonthlySalaryPhp} onChange={(value) => update("preferredMonthlySalaryPhp", value)} />
+              <Field label="USD hard monthly minimum" type="number" value={data.minimumMonthlySalaryUsd} onChange={(value) => update("minimumMonthlySalaryUsd", value)} />
+              <Field label="Salary answer shown for review" value={data.desiredSalary} onChange={(value) => update("desiredSalary", value)} />
+              <SelectField label="Work mode" value={data.workMode} onChange={(value) => update("workMode", value)} options={["Remote only", "Remote or hybrid", "Hybrid", "On-site"]} />
+              <Field label="Shift availability" value={data.shiftAvailability} onChange={(value) => update("shiftAvailability", value)} />
+              <Field label="Start availability" value={data.startAvailability} onChange={(value) => update("startAvailability", value)} required />
+              <Field label="Timezone availability" value={data.timezoneAvailability} onChange={(value) => update("timezoneAvailability", value)} />
+              <Field label="Primary equipment" value={data.equipmentSummary} onChange={(value) => update("equipmentSummary", value)} wide multiline />
+              <Field label="Internet connection" value={data.internetSummary} onChange={(value) => update("internetSummary", value)} />
+              <Field label="Backup power" value={data.backupPowerSummary} onChange={(value) => update("backupPowerSummary", value)} />
+              <Field label="Backup device" value={data.backupDeviceSummary} onChange={(value) => update("backupDeviceSummary", value)} wide />
             </div>
           ) : null}
 
           {step === 3 ? (
-            <div className={styles.resumeArea}>
-              <label className={styles.uploadBox}>
-                <FileUp size={25} />
-                <strong>{data.resumeName || "Choose your master resume"}</strong>
-                <span>PDF only. Maximum recommended size is 5 MB.</span>
-                <input
-                  type="file"
-                  accept="application/pdf,.pdf"
-                  required={!data.resumeName}
-                  onChange={(event) => update("resumeName", event.target.files?.[0]?.name ?? "")}
-                />
-              </label>
-              <p className={styles.resumeNote}>The browser demo remembers only the filename. The configured app uploads the PDF directly to your private Supabase Storage bucket.</p>
-              {saved ? (
-                <div className={styles.savedMessage}><Check size={18} /><span><strong>Setup saved.</strong> Your browser demo profile is ready for the review queue.</span></div>
-              ) : null}
+            <div className={styles.answerList}>
+              <Field label="Work authorization" value={data.workAuthorization} onChange={(value) => update("workAuthorization", value)} wide />
+              <Field label="Sponsorship" value={data.sponsorship} onChange={(value) => update("sponsorship", value)} wide />
+              <Field label="Passport availability" value={data.passportAvailability} onChange={(value) => update("passportAvailability", value)} wide />
+              <Field label="Reusable short answer" value={data.reusableShortAnswer} onChange={(value) => update("reusableShortAnswer", value)} wide multiline />
+              <Field label="Cover letter starter" value={data.coverLetter} onChange={(value) => update("coverLetter", value)} wide multiline />
+              <div className={styles.policyCard}>
+                <Sparkles size={18} />
+                <div><strong>Legal answers stay manual</strong><p>Passport availability does not prove work authorization. ApplyFlow leaves authorization and sponsorship questions for review on each job.</p></div>
+              </div>
+              <div className={styles.resumeArea}>
+                <label className={styles.uploadBox}>
+                  <FileUp size={25} />
+                  <strong>{data.resumeFileName || "Choose your master resume"}</strong>
+                  <span>PDF only. Maximum recommended size is 5 MB.</span>
+                  <input
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    required={!data.resumeFileName}
+                    onChange={(event) => update("resumeFileName", event.target.files?.[0]?.name ?? "")}
+                  />
+                </label>
+                <p className={styles.resumeNote}>The browser demo remembers only the filename. Select the real PDF again inside the extension when attaching it to a supported application.</p>
+                {saved ? (
+                  <div className={styles.savedMessage}><Check size={18} /><span><strong>Setup saved.</strong> Export this private profile and import it in the Chrome extension.</span></div>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
@@ -203,6 +269,7 @@ function Field({
   type = "text",
   required = false,
   wide = false,
+  multiline = false,
 }: {
   label: string;
   value: string;
@@ -210,11 +277,16 @@ function Field({
   type?: string;
   required?: boolean;
   wide?: boolean;
+  multiline?: boolean;
 }) {
   return (
     <label className={wide ? styles.fieldWide : styles.field}>
       <span>{label}</span>
-      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} required={required} />
+      {multiline ? (
+        <textarea value={value} onChange={(event) => onChange(event.target.value)} required={required} />
+      ) : (
+        <input type={type} value={value} onChange={(event) => onChange(event.target.value)} required={required} />
+      )}
     </label>
   );
 }
@@ -231,18 +303,23 @@ function SelectField({ label, value, onChange, options }: { label: string; value
 }
 
 function stepDescription(index: number) {
-  return ["Contact and links", "Roles and filters", "Verified reusable facts", "Private PDF version"][index];
+  return ["Legal name and contact", "Current work and skills", "Filters and remote readiness", "Reviewed text and private PDF"][index];
 }
 
 function stepTitle(index: number) {
-  return ["Start with the facts only you can verify.", "Define what a good opportunity looks like.", "Decide what ApplyFlow may reuse.", "Add the resume you want employers to receive."][index];
+  return [
+    "Start with verified identity details.",
+    "Describe the work you can prove.",
+    "Set hard filters before searching.",
+    "Prepare answers without guessing.",
+  ][index];
 }
 
 function stepLead(index: number) {
   return [
     "These values become the source for safe contact fields in supported applications.",
-    "Hard filters keep low-quality or irrelevant jobs out of your review queue.",
-    "Sensitive decisions stay reviewable even when a field match is certain.",
-    "Resume versions stay traceable so every application records the exact PDF sent.",
+    "Current and project-based roles can exist together without hiding either one.",
+    "Separate PHP and USD floors prevent a currency conversion from weakening your minimum.",
+    "Sensitive legal answers remain manual while reusable professional answers stay ready to copy.",
   ][index];
 }

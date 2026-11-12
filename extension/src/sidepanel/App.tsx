@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { DEMO_PROFILE } from "../core/profile";
 import { validateResumeBytes, validateResumeMetadata } from "../core/resume";
 import {
+  createCandidateProfileDocument,
+  isCandidateProfileDocument,
   isDemoProfile,
   isFillReport,
   isRuntimeResponse,
@@ -26,8 +28,10 @@ async function sendRequest<T>(request: PanelRequest): Promise<T> {
   return response.data as T;
 }
 
-const profileFields: Array<{ key: keyof DemoProfile; label: string; wide?: boolean }> = [
+const profileFields: Array<{ key: keyof DemoProfile; label: string; wide?: boolean; multiline?: boolean }> = [
   { key: "firstName", label: "First name" },
+  { key: "middleName", label: "Middle name" },
+  { key: "middleInitial", label: "Middle initial" },
   { key: "lastName", label: "Last name" },
   { key: "fullName", label: "Full name", wide: true },
   { key: "email", label: "Email", wide: true },
@@ -37,9 +41,34 @@ const profileFields: Array<{ key: keyof DemoProfile; label: string; wide?: boole
   { key: "linkedinUrl", label: "LinkedIn URL", wide: true },
   { key: "githubUrl", label: "GitHub URL", wide: true },
   { key: "yearsExperience", label: "Years of experience" },
-  { key: "desiredSalary", label: "Desired salary" },
+  { key: "currentTitle", label: "Current title" },
+  { key: "currentEmployer", label: "Current employer", wide: true },
+  { key: "secondaryTitle", label: "Project title" },
+  { key: "secondaryEmployer", label: "Project employer", wide: true },
+  { key: "workHistorySummary", label: "Work history summary", wide: true, multiline: true },
+  { key: "educationSummary", label: "Education summary", wide: true, multiline: true },
+  { key: "credentialsSummary", label: "Credentials summary", wide: true },
+  { key: "languagesSummary", label: "Languages", wide: true },
+  { key: "targetRoles", label: "Target roles", wide: true },
+  { key: "skillsSummary", label: "Skills summary", wide: true, multiline: true },
+  { key: "aiAssistedWorkPreference", label: "AI-assisted work preference", wide: true },
+  { key: "minimumMonthlySalaryPhp", label: "PHP hard monthly minimum" },
+  { key: "preferredMonthlySalaryPhp", label: "PHP preferred monthly salary" },
+  { key: "minimumMonthlySalaryUsd", label: "USD hard monthly minimum" },
+  { key: "desiredSalary", label: "Salary answer for manual review", wide: true },
+  { key: "workMode", label: "Work mode" },
+  { key: "shiftAvailability", label: "Shift availability" },
+  { key: "startAvailability", label: "Start availability" },
+  { key: "timezoneAvailability", label: "Timezone availability" },
   { key: "workAuthorization", label: "Work authorization", wide: true },
-  { key: "coverLetter", label: "Cover letter starter", wide: true },
+  { key: "sponsorship", label: "Sponsorship", wide: true },
+  { key: "passportAvailability", label: "Passport availability", wide: true },
+  { key: "equipmentSummary", label: "Primary equipment", wide: true, multiline: true },
+  { key: "internetSummary", label: "Internet" },
+  { key: "backupPowerSummary", label: "Backup power", wide: true },
+  { key: "backupDeviceSummary", label: "Backup device", wide: true },
+  { key: "reusableShortAnswer", label: "Reusable short answer", wide: true, multiline: true },
+  { key: "coverLetter", label: "Cover letter starter", wide: true, multiline: true },
   { key: "resumeFileName", label: "Resume file for manual upload", wide: true },
 ];
 
@@ -47,6 +76,8 @@ function buildManualCompanionSnippets(profile: DemoProfile): string {
   return [
     "Prepared profile",
     `First name: ${profile.firstName}`,
+    `Middle name: ${profile.middleName}`,
+    `Middle initial: ${profile.middleInitial}`,
     `Last name: ${profile.lastName}`,
     `Full name: ${profile.fullName}`,
     `Email: ${profile.email}`,
@@ -56,9 +87,33 @@ function buildManualCompanionSnippets(profile: DemoProfile): string {
     `LinkedIn: ${profile.linkedinUrl}`,
     `GitHub: ${profile.githubUrl}`,
     `Years of experience: ${profile.yearsExperience}`,
-    `Desired salary: ${profile.desiredSalary}`,
+    `Current role: ${profile.currentTitle} at ${profile.currentEmployer}`,
+    `Project role: ${profile.secondaryTitle} at ${profile.secondaryEmployer}`,
+    `Work history: ${profile.workHistorySummary}`,
+    `Education: ${profile.educationSummary}`,
+    `Credentials: ${profile.credentialsSummary}`,
+    `Languages: ${profile.languagesSummary}`,
+    `Target roles: ${profile.targetRoles}`,
+    `Skills: ${profile.skillsSummary}`,
+    `Work mode: ${profile.workMode}`,
+    `Shift availability: ${profile.shiftAvailability}`,
+    `Start availability: ${profile.startAvailability}`,
+    `Timezone availability: ${profile.timezoneAvailability}`,
+    `PHP hard monthly minimum: ${profile.minimumMonthlySalaryPhp}`,
+    `PHP preferred monthly salary: ${profile.preferredMonthlySalaryPhp}`,
+    `USD hard monthly minimum: ${profile.minimumMonthlySalaryUsd}`,
+    `Desired salary answer: ${profile.desiredSalary}`,
     `Work authorization: ${profile.workAuthorization}`,
+    `Sponsorship: ${profile.sponsorship}`,
+    `Passport: ${profile.passportAvailability}`,
+    `Equipment: ${profile.equipmentSummary}`,
+    `Internet: ${profile.internetSummary}`,
+    `Backup power: ${profile.backupPowerSummary}`,
+    `Backup device: ${profile.backupDeviceSummary}`,
     `Resume file: ${profile.resumeFileName}`,
+    "",
+    "Reusable short answer",
+    profile.reusableShortAnswer,
     "",
     "Cover letter starter",
     profile.coverLetter,
@@ -93,6 +148,7 @@ export function App() {
   const [selectedResume, setSelectedResume] = useState<File | null>(null);
   const [resumeResult, setResumeResult] = useState<ResumeAttachReport | null>(null);
   const [resumePickerKey, setResumePickerKey] = useState(0);
+  const [profilePickerKey, setProfilePickerKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const [sitePolicy, setSitePolicy] = useState<SitePolicy | null>(null);
@@ -192,6 +248,34 @@ export function App() {
     });
   }
 
+  function handleImportProfile(file: File | null): void {
+    if (!file) return;
+    void runAction(async () => {
+      try {
+        const parsed: unknown = JSON.parse(await file.text());
+        if (!isCandidateProfileDocument(parsed)) {
+          throw new Error("Choose a version 1 ApplyFlow private profile JSON file");
+        }
+        await sendRequest({ type: "SAVE_PROFILE", profile: parsed.profile });
+        setProfile(parsed.profile);
+        setNotice({ tone: "success", message: `${file.name} was imported and saved locally` });
+      } finally {
+        setProfilePickerKey((current) => current + 1);
+      }
+    });
+  }
+
+  function handleExportProfile(): void {
+    const payload = JSON.stringify(createCandidateProfileDocument(profile), null, 2);
+    const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "applyflow-private-profile.json";
+    link.click();
+    URL.revokeObjectURL(url);
+    setNotice({ tone: "success", message: "Private profile exported to this device" });
+  }
+
   function handleResumeSelection(file: File | null): void {
     setResumeResult(null);
     if (!file) {
@@ -284,7 +368,7 @@ export function App() {
           <p className="eyebrow">APPLICATION COPILOT</p>
           <h1>ApplyFlow</h1>
         </div>
-        <span className="demo-badge">{manualCompanionMode ? "Manual mode" : "Local demo"}</span>
+        <span className="demo-badge">{manualCompanionMode ? "Manual mode" : "Local only"}</span>
       </header>
 
       <section className="hero-card">
@@ -415,15 +499,27 @@ export function App() {
 
       <details className="profile-card" open={manualCompanionMode ? true : undefined}>
         <summary>
-          <div><p className="eyebrow">LOCAL PROFILE</p><h3>Demo candidate data</h3></div>
+          <div><p className="eyebrow">LOCAL PROFILE</p><h3>Private candidate data</h3></div>
           <span>Manage</span>
         </summary>
-        <p className="profile-note">This starter profile is fictional and stays in Chrome local storage. Replace it before real use.</p>
+        <p className="profile-note">Import the private JSON from ApplyFlow setup or edit the fields here. Data stays in Chrome local storage.</p>
+        <div className="profile-actions">
+          <label>
+            Import private JSON
+            <input
+              accept="application/json,.json"
+              key={profilePickerKey}
+              onChange={(event) => handleImportProfile(event.target.files?.item(0) ?? null)}
+              type="file"
+            />
+          </label>
+          <button onClick={handleExportProfile} type="button">Export private JSON</button>
+        </div>
         <div className="profile-grid">
-          {profileFields.map(({ key, label, wide }) => (
+          {profileFields.map(({ key, label, wide, multiline }) => (
             <label className={wide ? "wide" : ""} key={key}>
               <span>{label}</span>
-              {key === "coverLetter" ? (
+              {multiline ? (
                 <textarea value={profile[key]} onChange={(event) => setProfile((current) => ({ ...current, [key]: event.target.value }))} />
               ) : (
                 <input value={profile[key]} onChange={(event) => setProfile((current) => ({ ...current, [key]: event.target.value }))} />

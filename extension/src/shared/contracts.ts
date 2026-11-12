@@ -1,5 +1,7 @@
 export type ProfileKey =
   | "firstName"
+  | "middleName"
+  | "middleInitial"
   | "lastName"
   | "fullName"
   | "email"
@@ -9,12 +11,20 @@ export type ProfileKey =
   | "linkedinUrl"
   | "githubUrl"
   | "yearsExperience"
-  | "desiredSalary"
-  | "workAuthorization"
+  | "currentTitle"
+  | "currentEmployer"
+  | "targetRoles"
+  | "workMode"
+  | "shiftAvailability"
+  | "startAvailability"
+  | "timezoneAvailability"
+  | "skillsSummary"
   | "coverLetter";
 
-export interface DemoProfile {
+export interface CandidateProfile {
   firstName: string;
+  middleName: string;
+  middleInitial: string;
   lastName: string;
   fullName: string;
   email: string;
@@ -25,9 +35,41 @@ export interface DemoProfile {
   githubUrl: string;
   yearsExperience: string;
   desiredSalary: string;
+  currentTitle: string;
+  currentEmployer: string;
+  secondaryTitle: string;
+  secondaryEmployer: string;
+  workHistorySummary: string;
+  educationSummary: string;
+  credentialsSummary: string;
+  languagesSummary: string;
+  targetRoles: string;
+  aiAssistedWorkPreference: string;
+  minimumMonthlySalaryPhp: string;
+  preferredMonthlySalaryPhp: string;
+  minimumMonthlySalaryUsd: string;
+  workMode: string;
+  shiftAvailability: string;
+  startAvailability: string;
+  timezoneAvailability: string;
   workAuthorization: string;
+  sponsorship: string;
+  passportAvailability: string;
+  skillsSummary: string;
+  equipmentSummary: string;
+  internetSummary: string;
+  backupPowerSummary: string;
+  backupDeviceSummary: string;
+  reusableShortAnswer: string;
   coverLetter: string;
   resumeFileName: string;
+}
+
+export type DemoProfile = CandidateProfile;
+
+export interface CandidateProfileDocument {
+  schemaVersion: 1;
+  profile: CandidateProfile;
 }
 
 export type FieldStatus = "ready" | "manual" | "blocked" | "unmatched" | "filled";
@@ -81,9 +123,9 @@ export const MAX_RESUME_FILE_BYTES = 5 * 1024 * 1024;
 export type PanelRequest =
   | { type: "GET_PROFILE" }
   | { type: "GET_SITE_POLICY" }
-  | { type: "SAVE_PROFILE"; profile: DemoProfile }
+  | { type: "SAVE_PROFILE"; profile: CandidateProfile }
   | { type: "SCAN_PAGE" }
-  | { type: "FILL_FIELDS"; profile: DemoProfile; reviewConfirmed: true }
+  | { type: "FILL_FIELDS"; profile: CandidateProfile; reviewConfirmed: true }
   | { type: "ATTACH_RESUME"; fileName: string; mimeType: "application/pdf"; bytes: number[] }
   | { type: "HIGHLIGHT_FIELD"; fieldId: string }
   | { type: "CLEAR_HIGHLIGHTS" };
@@ -91,7 +133,7 @@ export type PanelRequest =
 export type ContentRequest =
   | { type: "PING" }
   | { type: "SCAN_PAGE" }
-  | { type: "FILL_FIELDS"; profile: DemoProfile; reviewConfirmed: true }
+  | { type: "FILL_FIELDS"; profile: CandidateProfile; reviewConfirmed: true }
   | { type: "ATTACH_RESUME"; fileName: string; mimeType: "application/pdf"; bytes: number[] }
   | { type: "HIGHLIGHT_FIELD"; fieldId: string }
   | { type: "CLEAR_HIGHLIGHTS" };
@@ -100,7 +142,51 @@ export type RuntimeResponse<T = unknown> =
   | { ok: true; data: T }
   | { ok: false; error: string };
 
-const profileKeys: Array<keyof DemoProfile> = [
+export const candidateProfileKeys: Array<keyof CandidateProfile> = [
+  "firstName",
+  "middleName",
+  "middleInitial",
+  "lastName",
+  "fullName",
+  "email",
+  "phone",
+  "location",
+  "portfolioUrl",
+  "linkedinUrl",
+  "githubUrl",
+  "yearsExperience",
+  "desiredSalary",
+  "currentTitle",
+  "currentEmployer",
+  "secondaryTitle",
+  "secondaryEmployer",
+  "workHistorySummary",
+  "educationSummary",
+  "credentialsSummary",
+  "languagesSummary",
+  "targetRoles",
+  "aiAssistedWorkPreference",
+  "minimumMonthlySalaryPhp",
+  "preferredMonthlySalaryPhp",
+  "minimumMonthlySalaryUsd",
+  "workMode",
+  "shiftAvailability",
+  "startAvailability",
+  "timezoneAvailability",
+  "workAuthorization",
+  "sponsorship",
+  "passportAvailability",
+  "skillsSummary",
+  "equipmentSummary",
+  "internetSummary",
+  "backupPowerSummary",
+  "backupDeviceSummary",
+  "reusableShortAnswer",
+  "coverLetter",
+  "resumeFileName",
+];
+
+const legacyProfileKeys: Array<keyof CandidateProfile> = [
   "firstName",
   "lastName",
   "fullName",
@@ -141,11 +227,33 @@ function isResumePayload(value: Record<string, unknown>): boolean {
   );
 }
 
-export function isDemoProfile(value: unknown): value is DemoProfile {
+export function isCandidateProfile(value: unknown): value is CandidateProfile {
   return (
     isRecord(value) &&
-    profileKeys.every((key) => typeof value[key] === "string" && value[key].length <= 12_000)
+    candidateProfileKeys.every((key) => typeof value[key] === "string" && value[key].length <= 12_000)
   );
+}
+
+export const isDemoProfile = isCandidateProfile;
+
+export function isCandidateProfileDocument(value: unknown): value is CandidateProfileDocument {
+  return isRecord(value) && value.schemaVersion === 1 && isCandidateProfile(value.profile);
+}
+
+export function createCandidateProfileDocument(profile: CandidateProfile): CandidateProfileDocument {
+  return { schemaVersion: 1, profile };
+}
+
+export function migrateCandidateProfile(value: unknown, defaults: CandidateProfile): CandidateProfile | null {
+  if (isCandidateProfile(value)) return value;
+  if (!isRecord(value)) return null;
+  if (!legacyProfileKeys.every((key) => typeof value[key] === "string" && value[key].length <= 12_000)) return null;
+
+  const migrated = { ...defaults };
+  for (const key of candidateProfileKeys) {
+    if (typeof value[key] === "string" && value[key].length <= 12_000) migrated[key] = value[key];
+  }
+  return migrated;
 }
 
 export function isPanelRequest(value: unknown): value is PanelRequest {
