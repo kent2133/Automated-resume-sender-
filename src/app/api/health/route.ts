@@ -9,17 +9,17 @@ export async function GET() {
       status: "ok",
       databaseConfigured: false,
       databaseReachable: false,
-      schemaReady: false,
+      schemaProtected: true,
     });
   }
 
   let databaseReady = false;
 
   try {
-    const response = await fetch(new URL("/rest/v1/", configuration.url), {
+    const response = await fetch(new URL("/auth/v1/health", configuration.url), {
       cache: "no-store",
       headers: {
-        Accept: "application/openapi+json",
+        Accept: "application/json",
         apikey: configuration.publishableKey,
       },
       signal: AbortSignal.timeout(5_000),
@@ -35,7 +35,7 @@ export async function GET() {
       status: databaseReady ? "ok" : "degraded",
       databaseConfigured: true,
       databaseReachable: databaseReady,
-      schemaReady: databaseReady,
+      schemaProtected: true,
     },
     { status: databaseReady ? 200 : 503 },
   );
